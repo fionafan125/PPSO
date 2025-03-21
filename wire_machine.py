@@ -1,6 +1,11 @@
 import subprocess
 import numpy as np
 
+import os
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+os.chdir(SCRIPT_DIR)  # 強制變更當前目錄
+
 # 定义 Python 解释器和脚本名称
 python_executable = "python"
 script_name = "new_pso.py"

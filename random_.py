@@ -4,6 +4,7 @@ import pickle as pkl
 import numpy as np
 import math
 import pandas as pd
+import mimetypes
 
 main_file = os.path.join(os.path.dirname(__file__))
 
@@ -165,29 +166,21 @@ data['latitude'] = [
     121.8050639
 ]
 
-length = data['total_dist']
-print(length)
-
-# N = [6, 12, 18]
-# for point in N:
-#     random_points = generate_random_points(n = point, end = length)
-#     random_points = map_to_unit_interval(random_points, length)
-
-#     rand_path = os.path.join(main_file, 'random_storage', str(point)+'.pkl')
-#     print('--------------------------------')
-#     print("mapping back:", random_points)
-#     print(np.asarray(random_points).shape)
-#     print('--------------------------------')
-#     with open(rand_path, 'wb') as f:
-#         pkl.dump(random_points, f)
-
 all_point_cnt = 20
-random_points = generate_random_points(n = all_point_cnt, end = length)
-random_points = map_to_unit_interval(random_points, length)
-# random_points = np.asarray(random_points)
+file_path = "mapped_coordinates.xlsx"  # 你的 Excel 檔案名稱
+file_type = mimetypes.guess_type(file_path)[0]
+df = pd.read_excel(file_path, engine='openpyxl')
+for keys in df.keys():
+    print(keys)
+random_points = df['dist']
+random_points = np.asarray(random_points)
 
 N = [6, 12, 18]
 for point in N:
+    if isinstance(random_points, np.ndarray):  # 只有當它是 ndarray 時才轉換
+        random_points = random_points.tolist()
+    
+    print(type(random_points))
     random.sample(random_points, point)
 
     rand_path = os.path.join(main_file, 'random_storage', str(point)+'.pkl')

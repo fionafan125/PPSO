@@ -1,290 +1,130 @@
-import os
-import matplotlib.pyplot as plt
-import seaborn
-import pickle as pkl
 import numpy as np
-from matplotlib.ticker import MaxNLocator
 import pandas as pd
-import src
-import re
-from src import *
-'''
-    "earned_money": earned_money,
-    "final_ans": final_ans,
-    "record_cost":fitnessCurve
-'''
 
-all_data = {
-    'spend': [],
-    'earned_money':[],
-    'pole':[],
-    'machine':[],
-    'final_ans':[],
-    'final_ans_2d':[]
-}
+# 讀取 Excel 檔案中的新測量點
+file_path = "20.xlsx"  # 你的 Excel 檔案名稱
+df = pd.read_excel(file_path)
 
-def get_maximum(earned_money, machine_amount):
-    earned_money, machine_amount = np.asarray(earned_money), np.asarray(machine_amount)
-    idx = np.argmax(earned_money)
-    max_earned_money, max_machine = earned_money[idx], machine_amount[idx]
+# 讀取測量點的經緯度
+new_longitude = df['經度'].values
+new_latitude = df['緯度'].values
+new_points = np.vstack((new_latitude, new_longitude)).T
 
+# 轉彎點（原始河道曲線）
+turning_points = np.array([
+    [24.85673, 121.800161],
+    [24.855898, 121.801116],
+    [24.853698, 121.804258],
+    [24.853605, 121.804203],
+    [24.853559, 121.804206],
+    [24.8535205, 121.8042687],
+    [24.853499, 121.8043151],
+    [24.8534829, 121.8043563],
+    [24.8534572, 121.804387],
+    [24.8533031, 121.8046549],
+    [24.853212, 121.80479],
+    [24.8530468, 121.8049825],
+    [24.8529641, 121.8051042],
+    [24.852933, 121.8051702],
+    [24.85265, 121.804973],
+    [24.852488, 121.804969],
+    [24.8523532, 121.8048866],
+    [24.8521998, 121.8048336],
+    [24.8519978, 121.8047297],
+    [24.8518524, 121.804615],
+    [24.8515883, 121.8043766],
+    [24.85146, 121.8042378],
+    [24.8515503, 121.8041366],
+    [24.8516121, 121.8040262],
+    [24.8512859, 121.8037456],
+    [24.8512847, 121.8037047],
+    [24.8511633, 121.8036125],
+    [24.8510769, 121.8035545],
+    [24.8510608, 121.8035398],
+    [24.8510495, 121.8035445],
+    [24.8509955, 121.8036217],
+    [24.8509464, 121.8037056],
+    [24.850902, 121.8036953],
+    [24.8508618, 121.8036536],
+    [24.850858, 121.8036192],
+    [24.8507426, 121.8035327],
+    [24.8506799, 121.8034925],
+    [24.8506349, 121.8034677],
+    [24.8506221, 121.803467],
+    [24.8505972, 121.8035019],
+    [24.8505862, 121.8035093],
+    [24.850568, 121.8035079],
+    [24.8505083, 121.8034321],
+    [24.8502303, 121.8032055],
+    [24.8502053, 121.8031907],
+    [24.8500988, 121.8033215],
+    [24.8500149, 121.8034455],
+    [24.8499571, 121.8034911],
+    [24.8499205, 121.8034858],
+    [24.8498451, 121.8034154],
+    [24.8497922, 121.8033497],
+    [24.8497678, 121.8033356],
+    [24.8497283, 121.8033798],
+    [24.8495676, 121.8036179],
+    [24.84929, 121.80397],
+    [24.848993, 121.804471],
+    [24.8489324, 121.8044849],
+    [24.8487365, 121.8047924],
+    [24.8486689, 121.8048819],
+    [24.8486145, 121.8049791],
+    [24.8486017, 121.805021],
+    [24.8485661, 121.8050639]
+])
 
-    return max_earned_money, max_machine, idx
+# 設定河道的總長度
+actual_length = 1036.8  # 整條河道的實際長度 (m)
+
+# **🚀 使用 Haversine 公式計算經緯度距離**
+from geopy.distance import geodesic
+
+def get_acc_distance(points):
+    dist = np.zeros(len(points))
+    for i in range(1, len(points)):
+        dist[i] = dist[i - 1] + geodesic(points[i - 1], points[i]).meters  # 直接用地理距離
+    return dist
+
+accumulated_turning_distances = get_acc_distance(turning_points)
+
+# **🛰️ 新測量點映射到河道曲線**
+from scipy.spatial import KDTree
+
+# 使用 KDTree 加速最近轉彎點查找
+tree = KDTree(turning_points)
+
+mapped_distances = []
+for new_pt in new_points:
+    dist, idx = tree.query(new_pt)
     
+    if idx == len(turning_points) - 1:
+        mapped_distances.append(accumulated_turning_distances[-1])
+        continue
 
-pattern_machine = r'machine_amount_(\d+)'
-pattern_pole = r'wire_pole_(\d+)'
-pattern_spend = r'money_([\d\.eE]+)'
-
-main_file = os.path.join(os.path.dirname(__file__),'result_file')
-file_name = 'storage_name.pkl'
-#original settings
-
-for money in os.listdir(main_file):
-    money_folder = os.path.join(main_file, money)
-
-    for wire_pole in os.listdir(money_folder):
-        wire_pole_folder = os.path.join(money_folder, wire_pole)
-
-        earned_money = []
-        machine_amount = []
-        final_ans_stack = []
-        for machine in os.listdir(wire_pole_folder):
-            read_folder = os.path.join(wire_pole_folder, machine, file_name)
-
-            with open(read_folder, 'rb') as f:
-                data = pkl.load(f)
-
-            earned_money.append(data['earned_money'])
-            final_ans_stack.append(np.asarray(data['final_ans']))
-
-            match_machine = re.search(pattern_machine, machine)
-            machine_amount_value = int(match_machine.group(1))
-            machine_amount.append(machine_amount_value)
-
-            
-
-        max_earned_money, max_machine, idx = get_maximum(earned_money, machine_amount)
-        all_data['earned_money'].append(max_earned_money)
-        all_data['machine'].append(max_machine)
-        all_data['final_ans'].append(final_ans_stack[idx])
-
-
-        match_pole = re.search(pattern_pole, wire_pole)
-        pole_amount_value = int(match_pole.group(1))
-        all_data['pole'].append(pole_amount_value)
-
-        
-        match_spend = re.search(pattern_spend, money)
-        spend_value = match_spend.group(1)
-        all_data['spend'].append(spend_value)
-        
-
-#讀取原本excel
-#原本的值mapping 回去變成點位
-
-store_final_data = 'store_final_data.pkl'
-#==settings =================================
-#假設發電15年 設5瓦
-
-store_all_folder = 'store_all'
-if not os.path.exists(store_all_folder):
-    os.mkdir(store_all_folder)
-
-pkl_file_storage = os.path.join(store_all_folder, store_final_data)
-record_cost = []
-KW_volumn = 5.1
-#===gain
-
-
-meters_per_degree_latitude = 111000 #經度換算公尺
-
-#with open('point.xlsx', 'rb') as f:
- #   data = pd.read_excel(f)
-
-data = {
-    'total_dist': {},
-    'longitude': {},
-    'latitude': {}
-}
-data['total_dist'] = [1036.8]
-data['longitude'] = [
-    24.85673,
-    24.855898,
-    24.853698,
-    24.853605,
-    24.853559,
-    24.8535205,
-    24.853499,
-    24.8534829,
-    24.8534572,
-    24.8533031,
-    24.853212,
-    24.8530468,
-    24.8529641,
-    24.852933,
-    24.85265,
-    24.852488,
-    24.8523532,
-    24.8521998,
-    24.8519978,
-    24.8518524,
-    24.8515883,
-    24.85146,
-    24.8515503,
-    24.8516121,
-    24.8512859,
-    24.8512847,
-    24.8511633,
-    24.8510769,
-    24.8510608,
-    24.8510495,
-    24.8509955,
-    24.8509464,
-    24.850902,
-    24.8508618,
-    24.850858,
-    24.8507426,
-    24.8506799,
-    24.8506349,
-    24.8506221,
-    24.8505972,
-    24.8505862,
-    24.850568,
-    24.8505083,
-    24.8502303,
-    24.8502053,
-    24.8500988,
-    24.8500149,
-    24.8499571,
-    24.8499205,
-    24.8498451,
-    24.8497922,
-    24.8497678,
-    24.8497283,
-    24.8495676,
-    24.84929,
-    24.848993,
-    24.8489324,
-    24.8487365,
-    24.8486689,
-    24.8486145,
-    24.8486017,
-    24.8485661
-]
-
-data['latitude'] = [
-    121.800161,
-    121.801116,
-    121.804258,
-    121.804203,
-    121.804206,
-    121.8042687,
-    121.8043151,
-    121.8043563,
-    121.804387,
-    121.8046549,
-    121.80479,
-    121.8049825,
-    121.8051042,
-    121.8051702,
-    121.804973,
-    121.804969,
-    121.8048866,
-    121.8048336,
-    121.8047297,
-    121.804615,
-    121.8043766,
-    121.8042378,
-    121.8041366,
-    121.8040262,
-    121.8037456,
-    121.8037047,
-    121.8036125,
-    121.8035545,
-    121.8035398,
-    121.8035445,
-    121.8036217,
-    121.8037056,
-    121.8036953,
-    121.8036536,
-    121.8036192,
-    121.8035327,
-    121.8034925,
-    121.8034677,
-    121.803467,
-    121.8035019,
-    121.8035093,
-    121.8035079,
-    121.8034321,
-    121.8032055,
-    121.8031907,
-    121.8033215,
-    121.8034455,
-    121.8034911,
-    121.8034858,
-    121.8034154,
-    121.8033497,
-    121.8033356,
-    121.8033798,
-    121.8036179,
-    121.80397,
-    121.804471,
-    121.8044849,
-    121.8047924,
-    121.8048819,
-    121.8049791,
-    121.805021,
-    121.8050639
-]
-
-actual_length = data['total_dist'][0]  # [0]
-#===================================================
-
-points = np.vstack((data['longitude'], data['latitude'])).T #原始座標
-dist_points_meters = src.get_compared_dist(points, meters_per_degree_latitude) #相對座標
-accumulated_points = src.get_acc_distance(dist_points_meters) #累計相對座標
-actual_length = data['total_dist'][0]
-
-Straight_distance, accumulated_straight_dist = src.get_straight_dist(dist_points_meters, actual_length) #直線距離，累積距離
-
-
-
-
-
-# 打印每个键对应的值
-for idx in range(0, len(all_data['earned_money'])):
-    point_back = src.map_back_to_curve(all_data['final_ans'][idx], points, actual_length)
+    # 找到最近兩個轉彎點，做線性插值
+    p1, p2 = turning_points[idx], turning_points[idx + 1]
+    segment_length = geodesic(p1, p2).meters
     
-    all_data['final_ans_2d'].append(point_back)
-    print("++++++++++++++++++++++++++++++++")
-    print("================================")
+    proj_ratio = geodesic(new_pt, p1).meters / segment_length
+    mapped_distance = accumulated_turning_distances[idx] + proj_ratio * (accumulated_turning_distances[idx + 1] - accumulated_turning_distances[idx])
+    mapped_distances.append(mapped_distance)
 
-    for key in all_data:
-        print(f"{key}: {all_data[key][idx]}")
+# **📏 正規化到 0 ~ 1036.8**
+mapped_distances = np.array(mapped_distances)
+mapped_distances = (mapped_distances / accumulated_turning_distances[-1]) * actual_length
 
-    print("================================")
-    print("++++++++++++++++++++++++++++++++")
-    print("")
+# 整合到 DataFrame 並顯示結果
+result_df = pd.DataFrame({
+    'dist': mapped_distances,
+    'longitude': new_longitude,
+    'latitude': new_latitude
+})
 
+# 顯示結果
+print(result_df)
 
-with open(pkl_file_storage, 'wb') as f:
-    pkl.dump(all_data, f)
-
-#===open rand=============
-N = [6, 12, 18]
-for wire_rand in N:
-    with open(os.path.join('./random_storage', str(wire_rand) + '.pkl'), 'rb') as f:
-        rand_point = pkl.load(f)
-    rand_point = np.asarray(rand_point)
-    rand_point = map_points_to_range(rand_point, actual_length)
-    print("================================")
-    print(wire_rand)
-    for idx, rand_pt in enumerate(rand_point):
-        if rand_pt < 16.723:
-            rand_point[idx] = 16.724
-    print("================================")
-    rand_point2D = map_back_to_curve(rand_point, points, actual_length)
-    print(rand_point2D)
-    with open(os.path.join(store_all_folder, 'rand_' + str(wire_rand) + 'pkl'), 'wb') as f:
-        pkl.dump(wire_rand, f)
+# 如果需要存檔：
+result_df.to_excel("mapped_coordinates.xlsx", index=False)

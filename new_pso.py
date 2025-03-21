@@ -13,6 +13,10 @@ import matplotlib
 import multiprocessing as mp
 matplotlib.use('Agg') 
 
+import os
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+os.chdir(SCRIPT_DIR)  # 強制變更當前目錄
 
 # with open('point.xlsx', 'rb') as f:
 #     data = pd.read_excel(f, engine="openpyxl")
